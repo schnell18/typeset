@@ -1,0 +1,32 @@
+# Explicitly declare text files we want to always be normalized and
+# converted to native line endings on checkout.
+*.tex        text
+*.bib        text
+*.java       text
+*.py         text
+# PlantUML source code
+*.pu         text
+*.js         text
+# meta post source code
+*.mp         text
+*.properties text
+*.yml        text
+*.xml        text
+*.groovy     text
+README.md    text
+Makefile     text
+
+# Make cvc-env.sh unix style EOL
+*.sh eol=lf
+# Make *.bat DOS style EOL
+*.bat eol=crlf
+
+# Denote all files that are truly binary and should not be modified.
+*.jgp binary
+*.png binary
+*.svg binary
+*.eps binary
+*.zip binary
+*.jar binary
+*.war binary
+*.dia binary
