@@ -102,6 +102,16 @@
   fontsize=\footnotesize
 }
 
+\newminted{golang}{
+  autogobble,
+  breaklines,
+  frame=leftline,
+  framerule=1.2pt,
+  framesep=1em,
+  linenos,
+  fontsize=\footnotesize
+}
+
 \input{fancyquote}
 \input{deco}
 \input{erd}
@@ -2155,9 +2165,225 @@ config.system.sessions      0ms     0ms      0ms
 
 \newpage
 \section{Programming}
-\subsection{Java}
-\subsection{PHP}
+This section explains how to access MongoDB in various programming
+languages. So that you can build your application with MongoDB as
+peristence layer.
+
+% \subsection{Java}
+% \subsection{PHP}
 \subsection{golang}
+
+In this section, we explore programming MongoDB in golang. We will use
+the \href{https://github.com/mongodb/mongo-go-driver/}{official MongoDB
+Go Driver} to access MongoDB database. In the due process, we will write
+a program to learn how to install the MongoDB Go Driver and perform CRUD
+operations with it.
+
+\subsubsection{Install mongo-go-driver}
+To install the \emph{mongo-go-driver}, you run command as follows in
+the top level directory of your golang project:
+
+\begin{bashcode}
+go get go.mongodb.org/mongo-driver
+\end{bashcode}
+
+\subsubsection{Connect to MongoDB}
+Then create the file \emph{main.go} and write the below code. We will explain
+what this code does shortly.
+
+\begin{golangcode}
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+// Book - We will be using this Book type to perform crud operations
+type Book struct {
+  Title     string
+  Author    string
+  ISBN      string
+  Publisher string
+  Copies    int
+}
+
+func main() {
+
+  // Set client options
+  clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+
+  // Connect to MongoDB
+  client, err := mongo.Connect(context.TODO(), clientOptions)
+
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  // Check the connection
+  err = client.Ping(context.TODO(), nil)
+
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  fmt.Println("Connected to MongoDB!")
+  bookCol := client.Database("testing").Collection("book")
+}
+\end{golangcode}
+
+In the above code, we have imported the \emph{bson}, \emph{mongo}, and
+\emph{mongo/options} packages of mongo-driver and defined a \emph{Book}
+type to represent a simple book.
+
+In the main function, we created \emph{clientOptions} with MongoDB URL
+and credentials and pass it to \emph{mongo.Connect()} function. Once
+connected we can check our connection with \emph{client.Ping()}
+function.
+
+Line 42 uses \emph{bookCol} variable to query the books collection from
+\emph{testing} database.
+
+\subsubsection{Insert Document}
+To insert documents into MongoDB, we create a \emph{Book} struct to
+represent the document to insert into MongoDB. We use
+\emph{collection.InsertOne()} function to insert a single document in
+the collection, as illustrated by code that follows:
+
+\begin{golangcode}
+// Insert One document
+book1 := Book{"Animal Farm", "George Orwell", "0451526341", "Signet Classics", 100}
+insertResult, err := bookCol.InsertOne(context.TODO(), book1)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println("Inserted a single document: ", insertResult.InsertedID)
+\end{golangcode}
+
+To insert multiple documents at once we need to create a slice of
+\emph{Book} object and pass it to \emph{collection.InsertMany()}.
+The following example demonstrates the usage this bulk insert function:
+
+\begin{golangcode}
+// Insert multiple documents
+book2 := Book{"Super Freakonomics", "Steven D. Levitt", "0062312871", "HARPER COLLINS USA", 100}
+book3 := Book{"The Alchemist", "Paulo Coelho", "0062315005", "HarperOne", 100}
+multipleBooks := []interface{}{book2, book3}
+
+insertManyResult, err := bookCol.InsertMany(context.TODO(), multipleBooks)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println("Inserted multiple documents: ", insertManyResult.InsertedIDs)
+\end{golangcode}
+
+\subsubsection{Update Document}
+
+We can update a single document with function
+\emph{collection.UpdateOne()}. It requires a filter document to match
+documents in the collection and an updated document to describe the
+update operation. You can build these using \emph{bson.D} types. The
+following code will match the book with ISBN 0451526341 and increment
+the copies field by 10.
+
+\begin{golangcode}
+//Update one document
+filter := bson.D{{"isbn", "0451526341"}}
+
+update := bson.D{
+    {"$inc", bson.D{
+        {"copies", 10},
+    }},
+}
+
+updateResult, err := bookCol.UpdateOne(context.TODO(), filter, update)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Matched %v documents and updated %v documents.\n", updateResult.MatchedCount, updateResult.ModifiedCount)
+\end{golangcode}
+
+You can also update more than one documents at once in a single
+collection by function \emph{collection.UpdateMany()}. With this
+function, we need to pass filter document and update document same as
+\emph{collection.UpdateOne()}
+
+\subsubsection{Find Documents}
+
+To find a single document, we can use function
+\emph{collection.FindOne()}. We
+pass a filter document and decode the result in the Book type
+variable:
+
+\begin{golangcode}
+// A variable in which result will be decoded
+var result Book
+
+err = bookCol.FindOne(context.TODO(), filter).Decode(&result)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Found a single document: %+v\n", result)
+\end{golangcode}
+
+To find multiple documents, we use function \emph{collection.Find()}. This
+method returns a \emph{Cursor}, which provides a stream of documents on which we
+can iterate or we can get all the docs by function \emph{cursor.All()} in a
+slice of \emph{Book} type.
+
+\begin{golangcode}
+cursor, err := bookCol.Find(context.TODO(), bson.D{{}})
+if err != nil {
+  log.Fatal(err)
+}
+var books []Book
+if err = cursor.All(context.TODO(), &books); err != nil {
+  log.Fatal(err)
+}
+fmt.Printf("Found multiple documents: %+v\n", books)
+\end{golangcode}
+
+\subsubsection{Delete Documents}
+
+We can delete documents from a collection using functions
+\emph{collection.DeleteOne()} or \emph{collection.DeleteMany()}. Here
+you pass \emph{bson.D\{\{\}\}} as the filter argument, which will match
+all documents in the collection.
+
+\begin{golangcode}
+deleteCollection, err := bookCol.DeleteMany(context.TODO(), bson.D{{}})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Deleted %v documents in the books collection\n", deleteCollection.DeletedCount)
+\end{golangcode}
+
+You can drop entire collection by using the \emph{collection.Drop()}
+function, it will remove all documents and metadata, such as indexes
+from the collection.
+
+Once you have done all the operation, don't forget to close the MongoDB connection
+
+\begin{golangcode}
+err = client.Disconnect(context.TODO())
+
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println("Connection to MongoDB closed.")
+\end{golangcode}
+
+Now you can easily use MongoDB as Datasource in your go application.
 
 \newpage
 \section{Reference}
