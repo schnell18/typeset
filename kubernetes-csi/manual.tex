@@ -1,0 +1,894 @@
+%!TEX TS-program = xelatex
+%!TEX encoding = UTF-8 Unicode
+
+\documentclass[12pt]{article}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{minted}
+\usepackage[font={small,it}]{caption}
+\usepackage{booktabs,makecell,multirow,threeparttable}
+\usepackage{graphicx}
+\graphicspath{{./images/}}
+
+\usepackage{pdflscape}
+\usepackage{afterpage}
+\usepackage{capt-of}
+
+\usepackage{fancyhdr}
+\setlength{\headheight}{25pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\leftmark}
+\fancyhead[R]{\rightmark}
+\fancyfoot[C]{\thepage}
+
+\usepackage[utf8]{inputenc}
+\usepackage{fontspec,xltxtra,xunicode}
+\usepackage[T1]{fontenc}
+\usepackage{biolinum}
+\usepackage{libertineRoman} % or any other font package
+\usepackage[
+  colorlinks=true,
+  linkcolor=blue,
+  bookmarksnumbered=true,
+  bookmarksopen=true]{hyperref}
+
+\newcommand{\mytitle}[1]{
+  {\Huge #1}\par
+}
+
+\newcommand{\mysubtitle}[1]{
+  {\emph{#1}}\par
+}
+
+\definecolor{titlepagecolor}{cmyk}{1,.60,0,.40}
+
+\DeclareFixedFont{\titlefont}{T1}{ppl}{b}{it}{1.0in}
+
+\newminted{bash}{
+  autogobble,
+  breaklines,
+  frame=leftline,
+  framerule=1.2pt,
+  framesep=1em,
+  linenos,
+  fontsize=\footnotesize
+}
+
+\input{deco}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{minipage}{0.8\linewidth}
+  \vspace*{4cm}
+  \begin{center}
+    \noindent
+    \mytitle{Container Storage Interface (CSI)}
+    \rule{\linewidth}{0.2ex}\par
+    \mysubtitle{Jie Yu \\ Saad Ali \\ Jame DeFelice \\ typeset by Justin Zhang}
+  \end{center}
+\end{minipage}
+\null \vfill
+\hfill
+\begin{minipage}{0.55\linewidth}
+  \begin{flushright}
+    % \printauthor
+  \end{flushright}
+\end{minipage}
+%
+% \begin{minipage}{0.02\linewidth}
+%   \rule{1pt}{260pt}
+% \end{minipage}
+\titlepagedecoration
+\end{titlepage}
+
+\newpage
+\tableofcontents
+% \newpage
+% \listoffigures
+% \newpage
+% \listoftables
+% \newpage
+% \listoflistings
+
+\newpage
+This document is typesetted by
+\href{mailto:schnell18@gmail.com}{\emph{Justin Zhang}} in \LaTeX\ for
+better screen reading experience. The author of this document is
+\emph{Jie Yu}, \emph{Saad Ali} and \emph{James DeFelice}. You may read
+the document in its original form at \\
+\href{https://github.com/container-storage-interface/spec/blob/master/spec.md}{https://github.com/container-storage-interface/spec/blob/master/spec.md}.
+
+\newpage
+\section{Notational Conventions}
+The keywords "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+"OPTIONAL" are to be interpreted as described in RFC 2119 (Bradner, S.,
+"Key words for use in RFCs to Indicate Requirement Levels", BCP 14,
+\href{http://tools.ietf.org/html/rfc2119}{RFC 2119}, March 1997).
+
+The key words "unspecified", "undefined", and "implementation-defined"
+are to be interpreted as described in the
+\href{http://www.open-std.org/jtc1/sc22/wg14/www/C99RationaleV5.10.pdf\#page=18}{rationale
+for the C99 standard}.
+
+An implementation is not compliant if it fails to satisfy one or more of
+the MUST, REQUIRED, or SHALL requirements for the protocols it
+implements. An implementation is compliant if it satisfies all the MUST,
+REQUIRED, and SHALL requirements for the protocols it implements.
+
+\newpage
+\section{Terminology}
+
+  \begin{tabular}{lp{24em}}
+    \bfseries Volume	& A unit of storage that will be made available \\
+    \bfseries Block  Volume &	A volume that will appear as a block
+    inside of a CO-managed container, via the CSI. device inside the container. \\
+    \bfseries Mounted Volume	& A volume that will be mounted using the
+    specified file system and appear as a directory inside the
+    container. \\
+    \bfseries CO	& Container Orchestration system, communicates with
+    Plugins using CSI service RPCs. \\
+    \bfseries SP	& Storage Provider, the vendor of a CSI plugin
+    implementation. \\
+    \bfseries RPC	& \href{https://en.wikipedia.org/wiki/Remote\_procedure\_call}{Remote Procedure Call}. \\
+    \bfseries Node	& A host where the user workload will be running,
+    uniquely identifiable from the perspective of a Plugin by a node ID.
+    \\
+    \bfseries Plugin	& Aka \emph{plugin implementation}, a gRPC endpoint
+    that implements the CSI Services. \\
+    \bfseries Plugin  Supervisor&	Process that governs the lifecycle
+    of a Plugin, MAY be the CO. \\
+    \bfseries Workload	& The atomic unit of "work" scheduled by a CO.
+    This MAY be a container or a collection of containers. \\
+
+\end{tabular}
+
+\newpage
+\section{Objective}
+
+To define an industry standard “Container Storage Interface” (CSI) that
+will enable storage vendors (SP) to develop a plugin once and have it
+work across a number of container orchestration (CO) systems.
+
+\subsection{Goals in MVP}
+
+The Container Storage Interface (CSI) will
+
+\begin{itemize}
+  \item Enable SP authors to write one CSI compliant Plugin that
+    \emph{just works} across all COs that implement CSI.
+  \item Define API (RPCs) that enable:
+  \begin{itemize}
+    \item Dynamic provisioning and deprovisioning of a volume.
+    \item Attaching or detaching a volume from a node.
+    \item Mounting/unmounting a volume from a node.
+    \item Consumption of both block and mountable volumes.
+    \item Local storage providers (e.g., device mapper, lvm).
+    \item Creating and deleting a snapshot (source of the snapshot is a volume).
+    \item Provisioning a new volume from a snapshot (reverting snapshot,
+      where data in the original volume is erased and replaced with data
+      in the snapshot, is out of scope).
+  \end{itemize}
+  \item Define plugin protocol RECOMMENDATIONS.
+  \begin{itemize}
+    \item Describe a process by which a Supervisor configures a Plugin.
+    \item Container deployment considerations (CAP\_SYS\_ADMIN, mount namespace, etc.).
+  \end{itemize}
+\end{itemize}
+
+\subsection{Non-Goals in MVP}
+
+The Container Storage Interface (CSI) explicitly will not define,
+provide, or dictate:
+
+\begin{itemize}
+  \item Specific mechanisms by which a Plugin Supervisor manages the
+    lifecycle of a Plugin, including:
+  \begin{itemize}
+    \item How to maintain state (e.g. what is attached, mounted, etc.).
+    \item How to deploy, install, upgrade, uninstall, monitor, or
+      respawn (in case of unexpected termination) Plugins.
+  \end{itemize}
+  \item A first class message structure/field to represent "grades of
+    storage" (aka "storage class").
+  \item Protocol-level authentication and authorization.
+  \item Packaging of a Plugin.
+  \item POSIX compliance: CSI provides no guarantee that volumes
+    provided are POSIX compliant filesystems. Compliance is determined
+    by the Plugin implementation (and any backend storage system(s) upon
+    which it depends). CSI SHALL NOT obstruct a Plugin Supervisor or CO
+    from interacting with Plugin-managed volumes in a POSIX-compliant
+    manner.
+\end{itemize}
+
+\newpage
+\section{Solution Overview}
+
+This specification defines an interface along with the minimum
+operational and packaging recommendations for a storage provider (SP) to
+implement a CSI compatible plugin. The interface declares the RPCs that
+a plugin MUST expose: this is the \emph{primary focus} of the CSI
+specification. Any operational and packaging recommendations offer
+additional guidance to promote cross-CO compatibility.
+
+\subsection{Architecture}
+
+The primary focus of this specification is on the \emph{protocol}
+between a CO and a Plugin. It SHOULD be possible to ship cross-CO
+compatible Plugins for a variety of deployment architectures. A CO
+SHOULD be equipped to handle both centralized and headless plugins, as
+well as split-component and unified plugins. Several of these
+possibilities are illustrated in the following figures.
+
+%%TODO: use tikz to draw diagrams
+\begin{bashcode}
+                             CO "Master" Host
++-------------------------------------------+
+|                                           |
+|  +------------+           +------------+  |
+|  |     CO     |   gRPC    | Controller |  |
+|  |            +----------->   Plugin   |  |
+|  +------------+           +------------+  |
+|                                           |
++-------------------------------------------+
+
+                            CO "Node" Host(s)
++-------------------------------------------+
+|                                           |
+|  +------------+           +------------+  |
+|  |     CO     |   gRPC    |    Node    |  |
+|  |            +----------->   Plugin   |  |
+|  +------------+           +------------+  |
+|                                           |
++-------------------------------------------+
+
+Figure 1: The Plugin runs on all nodes in the cluster: a centralized
+Controller Plugin is available on the CO master host and the Node
+Plugin is available on all of the CO Nodes.
+\end{bashcode}
+
+\begin{bashcode}
+                            CO "Node" Host(s)
++-------------------------------------------+
+|                                           |
+|  +------------+           +------------+  |
+|  |     CO     |   gRPC    | Controller |  |
+|  |            +--+-------->   Plugin   |  |
+|  +------------+  |        +------------+  |
+|                  |                        |
+|                  |                        |
+|                  |        +------------+  |
+|                  |        |    Node    |  |
+|                  +-------->   Plugin   |  |
+|                           +------------+  |
+|                                           |
++-------------------------------------------+
+
+Figure 2: Headless Plugin deployment, only the CO Node hosts run
+Plugins. Separate, split-component Plugins supply the Controller
+Service and the Node Service respectively.
+\end{bashcode}
+
+
+\begin{bashcode}
+                            CO "Node" Host(s)
++-------------------------------------------+
+|                                           |
+|  +------------+           +------------+  |
+|  |     CO     |   gRPC    | Controller |  |
+|  |            +----------->    Node    |  |
+|  +------------+           |   Plugin   |  |
+|                           +------------+  |
+|                                           |
++-------------------------------------------+
+
+Figure 3: Headless Plugin deployment, only the CO Node hosts run
+Plugins. A unified Plugin component supplies both the Controller
+Service and Node Service.
+\end{bashcode}
+
+\begin{bashcode}
+                            CO "Node" Host(s)
++-------------------------------------------+
+|                                           |
+|  +------------+           +------------+  |
+|  |     CO     |   gRPC    |    Node    |  |
+|  |            +----------->   Plugin   |  |
+|  +------------+           +------------+  |
+|                                           |
++-------------------------------------------+
+
+Figure 4: Headless Plugin deployment, only the CO Node hosts run
+Plugins. A Node-only Plugin component supplies only the Node Service.
+Its GetPluginCapabilities RPC does not report the CONTROLLER_SERVICE
+capability.
+\end{bashcode}
+
+\subsection{Volume Lifecycle}
+
+\begin{bashcode}
+   CreateVolume +------------+ DeleteVolume
+ +------------->|  CREATED   +--------------+
+ |              +---+----^---+              |
+ |       Controller |    | Controller       v
++++         Publish |    | Unpublish       +++
+|X|          Volume |    | Volume          | |
++-+             +---v----+---+             +-+
+                | NODE_READY |
+                +---+----^---+
+               Node |    | Node
+            Publish |    | Unpublish
+             Volume |    | Volume
+                +---v----+---+
+                | PUBLISHED  |
+                +------------+
+
+Figure 5: The lifecycle of a dynamically provisioned volume, from
+creation to destruction.
+\end{bashcode}
+
+\begin{bashcode}
+   CreateVolume +------------+ DeleteVolume
+ +------------->|  CREATED   +--------------+
+ |              +---+----^---+              |
+ |       Controller |    | Controller       v
++++         Publish |    | Unpublish       +++
+|X|          Volume |    | Volume          | |
++-+             +---v----+---+             +-+
+                | NODE_READY |
+                +---+----^---+
+               Node |    | Node
+              Stage |    | Unstage
+             Volume |    | Volume
+                +---v----+---+
+                |  VOL_READY |
+                +---+----^---+
+               Node |    | Node
+            Publish |    | Unpublish
+             Volume |    | Volume
+                +---v----+---+
+                | PUBLISHED  |
+                +------------+
+
+Figure 6: The lifecycle of a dynamically provisioned volume, from
+creation to destruction, when the Node Plugin advertises the
+STAGE_UNSTAGE_VOLUME capability.
+\end{bashcode}
+
+\begin{bashcode}
+    Controller                  Controller
+       Publish                  Unpublish
+        Volume  +------------+  Volume
+ +------------->+ NODE_READY +--------------+
+ |              +---+----^---+              |
+ |             Node |    | Node             v
++++         Publish |    | Unpublish       +++
+|X| <-+      Volume |    | Volume          | |
++++   |         +---v----+---+             +-+
+ |    |         | PUBLISHED  |
+ |    |         +------------+
+ +----+
+   Validate
+   Volume
+   Capabilities
+
+Figure 7: The lifecycle of a pre-provisioned volume that requires
+controller to publish to a node (`ControllerPublishVolume`) prior to
+publishing on the node (`NodePublishVolume`).
+\end{bashcode}
+
+\begin{bashcode}
+       +-+  +-+
+       |X|  | |
+       +++  +^+
+        |    |
+   Node |    | Node
+Publish |    | Unpublish
+ Volume |    | Volume
+    +---v----+---+
+    | PUBLISHED  |
+    +------------+
+
+Figure 8: Plugins MAY forego other lifecycle steps by contraindicating
+them via the capabilities API. Interactions with the volumes of such
+plugins is reduced to `NodePublishVolume` and `NodeUnpublishVolume`
+calls.
+\end{bashcode}
+
+The above diagrams illustrate a general expectation with respect to how
+a CO MAY manage the lifecycle of a volume via the API presented in this
+specification. Plugins SHOULD expose all RPCs for an interface:
+Controller plugins SHOULD implement all RPCs for the Controller service.
+Unsupported RPCs SHOULD return an appropriate error code that indicates
+such (e.g. CALL\_NOT\_IMPLEMENTED). The full list of plugin capabilities
+is documented in the ControllerGetCapabilities and NodeGetCapabilities
+RPCs.
+
+\newpage
+\section{Container Storage Interface}
+This section describes the interface between COs and Plugins.
+\subsection{RPC Interface}
+
+A CO interacts with an Plugin through RPCs. Each SP MUST provide: \\
+
+\begin{tabular}{lp{24em}}
+    \bfseries Node Plugin & A gRPC endpoint serving CSI RPCs that MUST be run
+    on the Node whereupon an SP-provisioned volume will be published. \\
+    \bfseries Controller Plugin & A gRPC endpoint serving CSI RPCs that
+    MAY be run anywhere. \\
+\end{tabular}
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/opts.proto}
+
+In some circumstances a single gRPC endpoint MAY serve all CSI RPCs (see
+Figure 3 in Architecture).
+
+There are three sets of RPCs: \\
+
+\begin{tabular}{lp{24em}}
+    \bfseries Identity Service & Both the Node Plugin and the Controller Plugin
+    MUST implement this sets of RPCs. \\
+    \bfseries Controller Service & The Controller Plugin MUST implement this sets of RPCs. \\
+    \bfseries Node Service & The Node Plugin MUST implement this sets of RPCs. \\
+\end{tabular}
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/rpcs.proto}
+
+\subsubsection{Concurrency}
+
+In general the Cluster Orchestrator (CO) is responsible for ensuring
+that there is no more than one call “in-flight” per volume at a given
+time. However, in some circumstances, the CO MAY lose state (for example
+when the CO crashes and restarts), and MAY issue multiple calls
+simultaneously for the same volume. The plugin SHOULD handle this as
+gracefully as possible. The error code ABORTED MAY be returned by the
+plugin in this case (see the \nameref{sec:error-scheme} section for details).
+
+\subsubsection{Field Requirements}
+
+The requirements documented herein apply equally and without exception,
+unless otherwise noted, for the fields of all protobuf message types
+defined by this specification. Violation of these requirements MAY
+result in RPC message data that is not compatible with all CO, Plugin,
+and/or CSI middleware implementations.
+
+\subsubsection{Size Limits}
+
+CSI defines general size limits for fields of various types (see table
+below). The general size limit for a particular field MAY be overridden
+by specifying a different size limit in said field's description. Unless
+otherwise specified, fields SHALL NOT exceed the limits documented here.
+These limits apply for messages generated by both COs and plugins.
+
+\begin{table}[H]
+\centering
+\begin{threeparttable}
+  \begin{tabular}{ll}
+  \toprule
+  \thead{\bfseries Size} & \thead{\bfseries Field Type} \\
+  \midrule
+  128 bytes & \verb=string= \\
+  4 KiB & \verb=map<string, string>= \\
+  \bottomrule\addlinespace[1ex]
+\end{tabular}
+% \begin{tablenotes}
+% \end{tablenotes}
+\end{threeparttable}
+  \caption{Size Limites}
+  \label{tab:field-size-limit}
+\end{table}
+
+
+\subsubsection{REQUIRED vs. OPTIONAL}
+\begin{itemize}
+  \item A field noted as REQUIRED MUST be specified, subject to any
+    per-RPC caveats; caveats SHOULD be rare.
+  \item A repeated or map field listed as REQUIRED MUST contain at least 1 element.
+  \item A field noted as OPTIONAL MAY be specified and the specification
+    SHALL clearly define expected behavior for the default, zero-value
+    of such fields.
+\end{itemize}
+
+Scalar fields, even REQUIRED ones, will be defaulted if not specified
+and any field set to the default value will not be serialized over the
+wire as per
+\href{https://developers.google.com/protocol-buffers/docs/proto3\#default}{proto3}.
+
+\subsubsection{Timeouts}
+
+Any of the RPCs defined in this spec MAY timeout and MAY be retried. The
+CO MAY choose the maximum time it is willing to wait for a call, how
+long it waits between retries, and how many time it retries (these
+values are not negotiated between plugin and CO).
+
+Idempotency requirements ensure that a retried call with the same fields
+continues where it left off when retried. The only way to cancel a call
+is to issue a "negation" call if one exists. For example, issue a
+ControllerUnpublishVolume call to cancel a pending
+ControllerPublishVolume operation, etc. In some cases, a CO MAY NOT be
+able to cancel a pending operation because it depends on the result of
+the pending operation in order to execute the "negation" call. For
+example, if a CreateVolume call never completes then a CO MAY NOT have
+the volume\_id to call DeleteVolume with.
+
+\subsection{Error Scheme} \label{sec:error-scheme}
+
+All CSI API calls defined in this spec MUST return a
+\href{https://github.com/grpc/grpc/blob/master/src/proto/grpc/status/status.proto}{standard
+gRPC status}. Most gRPC libraries provide helper methods to set and read
+the status fields.
+
+The status code MUST contain a
+\href{https://github.com/grpc/grpc-go/blob/master/codes/codes.go}{canonical
+error code}. COs MUST handle all valid error codes. Each RPC defines a
+set of gRPC error codes that MUST be returned by the plugin when
+specified conditions are encountered. In addition to those, if the
+conditions defined below are encountered, the plugin MUST return the
+associated gRPC error code.
+
+{%
+  \begin{center}
+  \pagestyle{empty}
+  \begin{landscape}
+  \begin{table}[H]
+  \begin{threeparttable}
+    \begin{tabular}{p{7em}p{12em}p{20em}p{20em}}
+    \toprule
+    \thead{\bfseries Condition} & \thead{\bfseries gRPC Code} & 
+    \thead{\bfseries Description} & \thead{\bfseries Recovery Behavior} \\
+    \midrule
+  Missing required field & 3 INVALID\_ARGUMENT & Indicates that a required
+      field is missing from the request. More human-readable information
+      MAY be provided in the status.message field. & Caller MUST fix the
+      request by adding the missing required field before retrying. \\
+  Invalid or unsupported field in the request & 3 INVALID\_ARGUMENT &
+      Indicates that the one or more fields in this field is either not
+      allowed by the Plugin or has an invalid value. More human-readable
+      information MAY be provided in the gRPC status.message field. &
+      Caller MUST fix the field before retrying. \\
+  Permission denied & 7 PERMISSION\_DENIED & The Plugin is able to derive
+      or otherwise infer an identity from the secrets present within an
+      RPC, but that identity does not have permission to invoke the RPC. &
+      System administrator SHOULD ensure that requisite permissions are
+      granted, after which point the caller MAY retry the attempted RPC.
+      \\
+  Operation pending for volume & 10 ABORTED & Indicates that there is
+      already an operation pending for the specified volume. In general
+      the Cluster Orchestrator (CO) is responsible for ensuring that there
+      is no more than one call "in-flight" per volume at a given time.
+      However, in some circumstances, the CO MAY lose state (for example
+      when the CO crashes and restarts), and MAY issue multiple calls
+      simultaneously for the same volume. The Plugin, SHOULD handle this
+      as gracefully as possible, and MAY return this error code to reject
+      secondary calls. & Caller SHOULD ensure that there are no other
+      calls pending for the specified volume, and then retry with
+      exponential back off. \\
+  Not authenticated & 16 UNAUTHENTICATED & The invoked RPC does not carry
+      secrets that are valid for authentication. & Caller SHALL either fix
+      the secrets provided in the RPC, or otherwise regalvanize said
+      secrets such that they will pass authentication by the Plugin for
+      the attempted RPC, after which point the caller MAY retry the
+      attempted RPC \\
+  Call not implemented & 12 UNIMPLEMENTED & The invoked RPC is not
+      implemented by the Plugin or disabled in the Plugin's current mode
+      of operation. & Caller MUST NOT retry. Caller MAY call
+      GetPluginCapabilities, ControllerGetCapabilities, or
+      NodeGetCapabilities to discover Plugin capabilities. \\
+    \bottomrule\addlinespace[1ex]
+  \end{tabular}
+  % \begin{tablenotes}
+  % \end{tablenotes}
+  \end{threeparttable}
+    \caption{gRPC Code Explained}
+    \label{tab:grpc-code-explained}
+  \end{table}
+  \end{landscape}
+  \end{center}
+}
+
+
+\subsection{Secrets Requirements}
+
+Secrets MAY be required by plugin to complete a RPC request. A secret is
+a string to string map where the key identifies the name of the secret
+(e.g. "username" or "password"), and the value contains the secret data
+(e.g. "bob" or "abc123"). Each key MUST consist of alphanumeric
+characters, '-', '\_' or '.'. Each value MUST contain a valid string. An
+SP MAY choose to accept binary (non-string) data by using a
+binary-to-text encoding scheme, like base64. An SP SHALL advertise the
+requirements for required secret keys and values in documentation. CO
+SHALL permit passing through the required secrets. A CO MAY pass the
+same secrets to all RPCs, therefore the keys for all unique secrets that
+an SP expects MUST be unique across all CSI operations. This information
+is sensitive and MUST be treated as such (not logged, etc.) by the CO.
+
+\subsection{Identity Service RPC}
+Identity service RPCs allow a CO to query a plugin for capabilities,
+health, and other metadata. The general flow of the success case MAY be
+as follows (protos illustrated in YAML for brevity):
+
+\begin{enumerate}
+  \item CO queries metadata via Identity RPC.
+
+    \begin{bashcode}
+       # CO --(GetPluginInfo)--> Plugin
+       request:
+       response:
+          name: org.foo.whizbang.super-plugin
+          vendor_version: blue-green
+          manifest:
+            baz: qaz
+    \end{bashcode}
+
+
+  \item CO queries available capabilities of the plugin.
+
+    \begin{bashcode}
+       # CO --(GetPluginCapabilities)--> Plugin
+       request:
+       response:
+         capabilities:
+           - service:
+               type: CONTROLLER_SERVICE
+    \end{bashcode}
+
+
+  \item CO queries the readiness of the plugin.
+
+    \begin{bashcode}
+       # CO --(Probe)--> Plugin
+       request:
+       response: {}
+    \end{bashcode}
+
+
+\end{enumerate}
+
+\subsubsection{GetPluginInfo}
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/getplugininfo.proto}
+
+{\bfseries{GetPluginInfo Errors}} \\
+
+If the plugin is unable to complete the GetPluginInfo call successfully,
+it MUST return a non-ok gRPC code in the gRPC status.
+
+\subsubsection{GetPluginCapabilities}
+
+This REQUIRED RPC allows the CO to query the supported capabilities of
+the Plugin "as a whole": it is the grand sum of all capabilities of all
+instances of the Plugin software, as it is intended to be deployed. All
+instances of the same version (see \verb=vendor_version= of
+\verb=GetPluginInfoResponse=) of the Plugin SHALL return the same set of
+capabilities, regardless of both: (a) where instances are deployed on
+the cluster as well as; (b) which RPCs an instance is serving.
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/getplugincapabilites.proto}
+
+{\bfseries{GetPluginCapabilities Errors}} \\
+
+If the plugin is unable to complete the GetPluginCapabilities call
+successfully, it MUST return a non-ok gRPC code in the gRPC status.
+
+
+\subsubsection{Probe}
+A Plugin MUST implement this RPC call. The primary utility of the Probe
+RPC is to verify that the plugin is in a healthy and ready state. If an
+unhealthy state is reported, via a non-success response, a CO MAY take
+action with the intent to bring the plugin to a healthy state. Such
+actions MAY include, but SHALL NOT be limited to, the following:
+
+\begin{itemize}
+  \item Restarting the plugin container, or
+  \item Notifying the plugin supervisor.
+\end{itemize}
+
+The Plugin MAY verify that it has the right configurations, devices,
+dependencies and drivers in order to run and return a success if the
+validation succeeds. The CO MAY invoke this RPC at any time. A CO MAY
+invoke this call multiple times with the understanding that a plugin's
+implementation MAY NOT be trivial and there MAY be overhead incurred by
+such repeated calls. The SP SHALL document guidance and known
+limitations regarding a particular Plugin's implementation of this RPC.
+For example, the SP MAY document the maximum frequency at which its
+Probe implementation SHOULD be called.
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/probe.proto}
+
+{\bfseries{Probe Errors}} \\
+
+If the plugin is unable to complete the Probe call successfully, it MUST
+return a non-ok gRPC code in the gRPC status. If the conditions defined
+below are encountered, the plugin MUST return the specified gRPC error
+code. The CO MUST implement the specified error recovery behavior when
+it encounters the gRPC error code.
+
+  \begin{table}[H]
+  \begin{threeparttable}
+    \begin{tabular}{p{5em}p{11em}p{8em}p{8em}}
+    \toprule
+    \thead{\bfseries Condition} & \thead{\bfseries gRPC Code} & 
+    \thead{\bfseries Description} & \thead{\bfseries Recovery Behavior} \\
+    \midrule
+      Plugin not healthy &	9 FAILED\_PRECONDITION &	Indicates that the
+      plugin is not in a healthy/ready state. & Caller SHOULD assume the
+      plugin is not healthy and that future RPCs MAY fail because of
+      this condition. \\
+      Missing required dependency &	9 FAILED\_PRECONDITION & Indicates
+      that the plugin is missing one or more required dependency. &
+      Caller MUST assume the plugin is not healthy. \\
+    \bottomrule\addlinespace[1ex]
+  \end{tabular}
+  % \begin{tablenotes}
+  % \end{tablenotes}
+  \end{threeparttable}
+    \caption{Probe gRPC Code Explained}
+    \label{tab:probe-grpc-code-explained}
+  \end{table}
+
+\subsection{Controller Service RPC}
+\subsubsection{CreateVolume}
+A Controller Plugin MUST implement this RPC call if it has
+\verb=CREATE_DELETE_VOLUME= controller capability. This RPC will be called by
+the CO to provision a new volume on behalf of a user (to be consumed as
+either a block device or a mounted filesystem).
+
+This operation MUST be idempotent. If a volume corresponding to the
+specified volume name already exists, is accessible from
+\verb=accessibility_requirements=, and is compatible with the specified
+\verb=capacity_range=, \verb=volume_capabilities= and parameters in the
+CreateVolumeRequest, the Plugin MUST reply 0 OK with the corresponding
+CreateVolumeResponse.
+
+Plugins MAY create 3 types of volumes:
+
+\begin{itemize}
+  \item Empty volumes. When plugin supports \verb=CREATE_DELETE_VOLUME= OPTIONAL capability.
+  \item From an existing snapshot. When plugin supports
+    \verb=CREATE_DELETE_VOLUME= and \verb=CREATE_DELETE_SNAPSHOT=
+    OPTIONAL capabilities.
+  \item From an existing volume. When plugin supports cloning, and
+    reports the OPTIONAL capabilities \verb=CREATE_DELETE_VOLUME= and
+    \verb=CLONE_VOLUME=.
+\end{itemize}
+
+If CO requests a volume to be created from existing snapshot or volume
+and the requested size of the volume is larger than the original
+snapshotted (or cloned volume), the Plugin can either refuse such a call
+with \verb=OUT_OF_RANGE= error or MUST provide a volume that, when presented to
+a workload by NodePublish call, has both the requested (larger) size and
+contains data from the snapshot (or original volume). Explicitly, it's
+the responsibility of the Plugin to resize the filesystem of the newly
+created volume at (or before) the NodePublish call, if the volume has
+VolumeCapability access type MountVolume and the filesystem resize is
+required in order to provision the requested capacity.
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/createvolume.proto}
+
+{\bfseries{CreateVolume Errors}} \\
+If the plugin is unable to complete the CreateVolume call successfully,
+it MUST return a non-ok gRPC code in the gRPC status. If the conditions
+defined below are encountered, the plugin MUST return the specified gRPC
+error code. The CO MUST implement the specified error recovery behavior
+when it encounters the gRPC error code.
+
+  \begin{table}[H]
+  \begin{threeparttable}
+    \begin{tabular}{p{5em}p{11em}p{8em}p{8em}}
+    \toprule
+    \thead{\bfseries Condition} & \thead{\bfseries gRPC Code} & 
+    \thead{\bfseries Description} & \thead{\bfseries Recovery Behavior} \\
+    \midrule
+      Plugin not healthy &	9 FAILED\_PRECONDITION &	Indicates that the
+      plugin is not in a healthy/ready state. & Caller SHOULD assume the
+      plugin is not healthy and that future RPCs MAY fail because of
+      this condition. \\
+      Missing required dependency &	9 FAILED\_PRECONDITION & Indicates
+      that the plugin is missing one or more required dependency. &
+      Caller MUST assume the plugin is not healthy. \\
+    \bottomrule\addlinespace[1ex]
+  \end{tabular}
+  % \begin{tablenotes}
+  % \end{tablenotes}
+  \end{threeparttable}
+    \caption{Probe gRPC Code Explained}
+    \label{tab:probe-grpc-code-explained}
+  \end{table}
+
+\subsubsection{DeleteVolume}
+
+A Controller Plugin MUST implement this RPC call if it has
+\verb=CREATE_DELETE_VOLUME= capability. This RPC will be called by the CO to
+deprovision a volume.
+
+This operation MUST be idempotent. If a volume corresponding to the
+specified \verb=volume_id= does not exist or the artifacts associated with the
+volume do not exist anymore, the Plugin MUST reply 0 OK.
+
+CSI plugins SHOULD treat volumes independent from their snapshots.
+
+If the Controller Plugin supports deleting a volume without affecting
+its existing snapshots, then these snapshots MUST still be fully
+operational and acceptable as sources for new volumes as well as appear
+on ListSnapshot calls once the volume has been deleted.
+
+When a Controller Plugin does not support deleting a volume without
+affecting its existing snapshots, then the volume MUST NOT be altered in
+any way by the request and the operation must return the
+\verb=FAILED_PRECONDITION= error code and MAY include meaningful human-readable
+information in the status.message field.
+
+\inputminted[breaklines,frame=lines,linenos,fontsize=\footnotesize]{proto}{src/deletevolume.proto}
+
+{\bfseries{DeleteVolume Errors}} \\
+If the plugin is unable to complete the DeleteVolume call successfully,
+it MUST return a non-ok gRPC code in the gRPC status. If the conditions
+defined below are encountered, the plugin MUST return the specified gRPC
+error code. The CO MUST implement the specified error recovery behavior
+when it encounters the gRPC error code.
+
+  \begin{table}[H]
+  \begin{threeparttable}
+    \begin{tabular}{p{5em}p{11em}p{8em}p{8em}}
+    \toprule
+    \thead{\bfseries Condition} & \thead{\bfseries gRPC Code} & 
+    \thead{\bfseries Description} & \thead{\bfseries Recovery Behavior} \\
+    \midrule
+      Volume in use & 9 FAILED\_PRECONDITION & Indicates that the
+      volume corresponding to the specified volume\_id could not be
+      deleted because it is in use by another resource or has snapshots
+      and the plugin doesn't treat them as independent entities. &
+      Caller SHOULD ensure that there are no other resources using the
+      volume and that it has no snapshots, and then retry with
+      exponential back off. \\
+    \bottomrule\addlinespace[1ex]
+  \end{tabular}
+  % \begin{tablenotes}
+  % \end{tablenotes}
+  \end{threeparttable}
+    \caption{DeleteVolume gRPC Code Explained}
+    \label{tab:delete-volume-grpc-code-explained}
+  \end{table}
+
+\subsubsection{ControllerPublishVolume}
+\subsubsection{ControllerUnpublishVolume}
+\subsubsection{ListVolumes}
+\subsubsection{ControllerGetVolume}
+\subsubsection{GetCapacity}
+\subsubsection{ControllerGetCapabilities}
+\subsubsection{CreateSnapshot}
+\subsubsection{DeleteSnapshot}
+\subsubsection{ListSnapshots}
+\subsubsection{ControllerExpandVolume}
+
+\subsection{Node Service RPC}
+\subsubsection{NodeStageVolume}
+\subsubsection{NodeUnstageVolume}
+\subsubsection{NodeUnPlubishVolume}
+\subsubsection{NodeGetVolumeStats}
+\subsubsection{NodeGetCapabilities}
+\subsubsection{NodeGetInfo}
+\subsubsection{NodeExpandVolume}
+
+\newpage
+\section{Protocol}
+\subsection{Connectivity}
+\subsection{Security}
+\subsection{Debugging}
+
+\newpage
+\section{Configuration and Operation}
+\subsection{General Configuration}
+\subsubsection{Plugin Bootstrap Example}
+\subsubsection{Filesystem}
+\subsection{Supervised Lifecycle Management}
+\subsubsection{Environment Variables}
+\subsubsection{Operational Recommendations}
+
+\end{document}
+% vim: set ai nu nobk expandtab ts=4 sw=2 tw=72 syntax=tex :
